@@ -1,0 +1,325 @@
+---
+title: "pseudobulk deseq2 - comets(others) vs rest"
+author: "Vanessa Dumeaux"
+date: "4/25/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(here)
+set.seed(321)
+library(VISION)
+
+vis.pth <- here("data", "data04-VISION")
+
+finalall <- readRDS(file.path(vis.pth, "utfczcsprapa-adjLogcounts_vis.rds"))
+
+all.latent <- finalall@LatentSpace
+all.metadata <- finalall@metaData
+sig.scores <- finalall@SigScores
+
+```
+
+```{r}
+table(all.metadata$drug_day, all.metadata$leiden_scVI_2)
+table(all.metadata$drug_day)
+```
+
+
+```{r}
+scvi.pth <- here("data", "data03-scvi")
+
+raw.counts <- read.csv(file.path(scvi.pth, "utfczcsprapa_raw.csv"), row.names = 1)
+
+```
+```{r}
+# Load libraries
+library(scater)
+library(Seurat)
+library(tidyverse)
+library(cowplot)
+library(Matrix.utils)
+library(edgeR)
+library(dplyr)
+library(magrittr)
+library(Matrix)
+library(purrr)
+library(reshape2)
+library(S4Vectors)
+library(tibble)
+library(SingleCellExperiment)
+library(pheatmap)
+library(apeglm)
+library(png)
+library(DESeq2)
+library(RColorBrewer)
+library(dplyr)
+library(stringr)
+library(magrittr)
+
+source(here("src", "utils.R"))
+```
+
+
+```{r}
+obj.list <- prep.pseudobulk(all.metadata = all.metadata)
+metadata <- obj.list$metadata
+pb <- obj.list$pb
+```
+
+
+
+##### FCZ comets vs rest
+
+```{r}
+clusters <- levels(metadata$cluster_id)
+clusters
+
+# Subset the metadata to only FCZ in cluster 0 and cluster 3
+cluster_metadata <- metadata[which(metadata$group_id %in% c("FCZ_2", "FCZ_3")), ]
+head(cluster_metadata)
+
+# Assign the rownames of the metadata to be the sample IDs
+rownames(cluster_metadata) <- paste(cluster_metadata$sample_id, cluster_metadata$cluster_id, sep = "_")
+head(cluster_metadata)
+
+# Subset the counts
+counts <- do.call(cbind, pb)
+colnames(counts) <- c(paste(colnames(pb[[clusters[1]]]), "0", sep = "_"),
+                      paste(colnames(pb[[clusters[2]]]), "1", sep = "_"),
+                      paste(colnames(pb[[clusters[3]]]), "2", sep = "_"),
+                      paste(colnames(pb[[clusters[4]]]), "3", sep = "_"),
+                      paste(colnames(pb[[clusters[5]]]), "4", sep = "_"),
+                      paste(colnames(pb[[clusters[6]]]), "others", sep = "_"))
+
+cluster_counts <- data.frame(counts[, which(colnames(counts) %in% rownames(cluster_metadata))])
+
+# Check that all of the row names of the metadata are the same and in the same order as the column names of the counts in order to use as input to DESeq2
+all(rownames(cluster_metadata) == colnames(cluster_counts))  
+```
+```{r}
+cluster_metadata$others <- as.factor(cluster_metadata$others)
+
+dds <- DESeqDataSetFromMatrix(cluster_counts, 
+                              colData = cluster_metadata, 
+                              design = ~ others + batch + cluster_id)
+```
+
+```{r}
+# Transform counts for data visualization
+rld <- rlog(dds, blind=TRUE)
+
+# Plot PCA
+
+DESeq2::plotPCA(rld, intgroup = "cluster_id")
+DESeq2::plotPCA(rld, intgroup = "group_id")
+DESeq2::plotPCA(rld, intgroup = "batch")
+DESeq2::plotPCA(rld, intgroup = "others")
+```
+```{r}
+# Extract the rlog matrix from the object and compute pairwise correlation values
+rld_mat <- assay(rld)
+rld_cor <- cor(rld_mat)
+
+# Plot heatmap
+pheatmap(rld_cor, annotation = cluster_metadata[, c("cluster_id"), drop=F])
+```
+```{r}
+dds <- DESeq(dds)
+
+cluster_metadata$others <- as.factor(cluster_metadata$others)
+# Output results of Wald test for contrast for stim vs ctrl
+levels(cluster_metadata$others)[1]
+levels(cluster_metadata$others)[1]
+
+contrast <- c("others", levels(cluster_metadata$others)[2], levels(cluster_metadata$others)[1])
+
+# resultsNames(dds)
+res <- results(dds, 
+               contrast = contrast,
+               alpha = 0.1)
+
+plotDispEsts(dds)
+```
+```{r}
+padj_cutoff <- 0.1
+
+res_tbl <- res %>%
+        data.frame() %>%
+        rownames_to_column(var="gene") %>%
+        as_tibble()
+
+
+# Subset the significant results
+sig_res <- dplyr::filter(res_tbl, padj < padj_cutoff) %>%
+        dplyr::arrange(padj)
+
+# Check significant genes output
+sig_res
+
+write.table(sig_res, 
+            "output/figure3suppTable1a-pseudoDE_fcz_othersXrest_fdr0.1.txt", 
+            sep="\t", col.names = TRUE, quote = FALSE)
+
+```
+
+
+# GO analysis for genes differentially expressed in comets (others) vs cells in other clusters
+
+
+
+```{r}
+bckg <- colnames(raw.counts)
+
+
+library(ViSEAGO)
+library(dplyr)
+library(forcats)
+
+# 
+# source("../../scRNA-seq/universal/myreadgaf.R")
+# goa <- myreadGAF("/home/shared/data/db/sc-candida/go/cgdfromGOConsortium.gaf.gz")
+# #ca.goa <- goa[goa$taxid=="237561",]
+# goa$gene_id <- gsub("_", "", goa$gene_id)
+# write.table(goa, "output/ca.goa.txt", sep="\t", quote = FALSE, row.names = FALSE)
+
+Custom<-ViSEAGO::Custom2GO(here("data", "ca.goa.txt"))
+
+myGENE2GO<-ViSEAGO::annotate(
+    "237561",
+    Custom
+)
+
+genesl <- sig_res$gene
+
+genelist <- as.numeric(bckg %in% genesl)
+names(genelist) <- bckg
+
+
+BP.markers<-ViSEAGO::create_topGOdata(
+  geneSel = genesl, 
+  allGenes = bckg,
+  gene2GO=myGENE2GO, 
+  ont="BP",
+  nodeSize=5
+)
+
+
+weight01.BP.markers<-topGO::runTest(
+    BP.markers,
+    statistic = "fisher"
+)
+
+
+allRes <- GenTable(BP.markers,
+                     weight01Fisher= weight01.BP.markers, 
+                     orderBy = "weight01Fisher", 
+                     topNodes=length(usedGO(BP.markers))) 
+  
+gt <- genesInTerm(BP.markers, allRes$GO.ID)
+common<-lapply(gt, function(sig) intersect(genesl, sig))
+
+
+gotable.top100<-allRes[allRes$weight01Fisher < 0.05,]
+
+gotable.top100.common <- common[allRes$weight01Fisher < 0.05]
+
+sep=" "
+paste_noNA <- function(x,sep=", ")
+  gsub(", " ,sep, toString(x[!is.na(x) & x!="" & x!="NA"] ) )
+
+gotable.top100.common <- unlist(lapply(gotable.top100.common,paste_noNA))
+
+gotable.top100$common <- gotable.top100.common
+
+exponent <- as.numeric(unlist(lapply(strsplit(gotable.top100$weight01Fisher, "e-"), "[", 2)))
+exponent <- ifelse(is.na(exponent), 0, exponent)
+
+gotable.top100$weight01Fisher <- gsub("e.", "", gotable.top100$weight01Fisher)
+gotable.top100$weight01Fisher <- gsub("< ", "", gotable.top100$weight01Fisher)
+
+gotable.top100$weight01Fisher <- as.numeric(gotable.top100$weight01Fisher)
+exponent <- ifelse(exponent==4, 10000, exponent)
+exponent <- ifelse(exponent==5, 100000, exponent)
+exponent <- ifelse(exponent==6, 1000000, exponent)
+exponent <- ifelse(exponent==7, 10000000, exponent)
+exponent <- ifelse(exponent==8, 100000000, exponent)
+exponent <- ifelse(exponent==13, 10000000000000, exponent)
+exponent <- ifelse(exponent==14, 100000000000000, exponent)
+exponent <- ifelse(exponent==15, 1000000000000000, exponent)
+exponent <- ifelse(exponent==16, 10000000000000000, exponent)
+exponent <- ifelse(exponent==0, 1, exponent)
+
+gotable.top100$weight01Fisher <- gotable.top100$weight01Fisher / exponent
+
+
+write.table(gotable.top100, 
+            "output/figure3suppTable1b-top100go_fcz_othersvsrest_fdr0.1.txt", 
+            sep="\t", col.names = TRUE, quote = FALSE)
+
+
+dotplot.sa.hyper <- gotable.top100 %>% 
+  ggplot(aes(y=-log2(weight01Fisher), x = reorder(Term,-log2(weight01Fisher)),
+                         size=Significant)) +
+  geom_point(color = "#993404") +
+  coord_flip() +
+  theme_minimal() 
+
+
+ggsave("output/figure3supp2c-dotplot.go.fcz_othersvsrest_fdr0.1.pdf", dotplot.sa.hyper)
+
+
+
+
+
+
+
+```
+
+# Investigate percent reads assigned to each chromosome across clusters ---------------
+
+## Compute percent of reads assignd to chormosome
+
+```{r}
+gtf_path <-  here("data", "data01-preprocessing", "genome", "ca_original_genomic.gtf")
+gtf <- rtracklayer::import(gtf_path)
+
+genes <- gsub("gene-CAALFM_", "", gtf$gene_id)
+genes <- ifelse(!is.na(gtf$gene_name), gtf$gene_name, genes)
+chrgenes <- lapply(levels(seqnames(gtf)), function(x){
+  cg <- unique(genes[as.character(seqnames(gtf))==x])})
+names(chrgenes) <- c(paste0("chr", 1:7), "chrR")
+
+
+
+raw.counts.t <- t(raw.counts)
+libsize <- colSums(raw.counts.t)
+
+chrpct <- lapply(chrgenes, function(x){
+  chrcounts <- colSums(raw.counts.t[rownames(raw.counts.t) %in% x,])
+  chrpct <- (chrcounts/libsize)*100
+  return(chrpct)})
+
+chrpct.tb <- do.call(cbind, chrpct)
+
+clusters <- cbind(all.metadata, chrpct.tb)
+clusters$leiden_scVI <- factor(as.character(clusters$leiden_scVI), levels = as.character(c(0:23)), labels = as.character(c(1:24)), ordered = TRUE)
+```
+
+## Figure 3 - figure supplement 2D
+```{r}
+
+p <- ggplot(clusters, aes(x=leiden_scVI, y=chr2))+
+  geom_point() +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none")
+p
+
+ggsave("output/figure3supp2d-chr2.pdf", p)
+
+```
+
