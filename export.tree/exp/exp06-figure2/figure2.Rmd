@@ -1,0 +1,546 @@
+---
+title: "figure2"
+author: "Vanessa Dumeaux"
+date: "12/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(VISION)
+library(here)
+library(ggplot2)
+library("LaCroixColoR")
+library(reshape2)
+library(viridis)
+library(viridisLite)
+library(RColorBrewer)
+library(here)
+library(pheatmap)
+library(dplyr)
+
+
+source(here("src", "bresat.R"))
+
+vis.pth <- here("data", "data04-VISION")
+scvi.pth <- here("data", "data03-scvi")
+    
+ut <- readRDS(file.path(vis.pth, "ut_0-adjLogcounts_vis.rds"))
+
+counts <- read.csv(file.path(scvi.pth, "ut_0-adjLogcounts_magic.csv"))
+counts <- subset(counts, select = -c(X))
+dim(counts)
+
+ut.latent <- ut@LatentSpace
+ut.metadata <- ut@metaData
+sig.scores <- ut@SigScores
+```
+
+
+we relabel the clusters in the paper so it can fit the order of the cell cycle phases we found associated with the clusters
+leiden scvi cluster 0 = cluster 2 (pink)
+leiden scvi cluster 1 = cluster 3 (green)
+leiden scvi cluster 2 = cluster 1 (blue)
+
+```{r}
+ut.metadata$leiden_scVI <- recode_factor(ut.metadata$leiden_scVI, "0" = "cluster2", "1" = "cluster3", "2" = "cluster1")
+
+
+cl.tb <- table(ut.metadata$leiden_scVI)
+cl.tb
+
+colnames(ut.latent) <- c("UMAP1", "UMAP2")
+
+
+```
+
+# Figure 2A - UMAP colored by clusters -----------
+
+```{r}
+df <- cbind(ut.latent, ut.metadata)
+
+
+p <- ggplot(df, aes(x=UMAP1, y=UMAP2, col = leiden_scVI)) +
+  geom_point(size = 0.4) + 
+  scale_color_manual(values=lacroix_palette("PassionFruit", type = "continuous", n=3)) +
+  theme_void()
+
+ggsave("output/figure2a-ut_umap_leiden.pdf", p, width = 4, height = 4)
+
+```
+
+
+# Identify most variable VISION signatures and explore gene expression ------------
+
+## Compute median signature score for each cluster and identify the most variable signatures across clusters
+
+```{r}
+library(dplyr)
+
+clusters <- ut.metadata
+
+sigtb <- data.frame(sig.scores)
+sigtb$leiden_scvi <- clusters$leiden_scVI
+
+sig.group <- sigtb %>%
+  group_by(leiden_scvi) %>%
+  summarise_at(.vars = names(.)[1:43],.funs = c(median="median"))
+
+df <- t(sig.group[, -1])
+colnames(df) <- sig.group$leiden_scvi
+
+
+bs <- sig.ranksum(df, ns=1:nrow(df), full.return = TRUE)
+
+bs.var <- apply(bs$dat, 1, var)
+
+sel <- rownames(bs$dat)[bs.var > 0.01]
+sel
+
+#  [1] "hog1_UP_median"                  "carb_reserve_metab_median"      
+#  [3] "glycolysis_median"               "alcohol_dehydrogenase_median"   
+#  [5] "iESR_carbohydrate_median"        "rdn_median"                     
+#  [7] "heat_inducible_median"           "hsp2_median"                    
+#  [9] "iESR_hsp_median"                 "S_G2_2_median"                  
+# [11] "m_gresham_median"                "s_histone_median"               
+# [13] "hyperosm_stress_median"          "rESR_RP_median"                 
+# [15] "oxidative2_median"               "iESR_proteinDegradVacuol_median"
+```
+
+## Check consistency of expression for most variable genes in each signature across UT cells
+
+### Plot correlation matrix
+
+```{r}
+
+library(MetBrewer)
+
+breaksList = seq(-1, 1, by = 0.1)
+sel.sig <- gsub("_median", "", sel)
+
+pdf("output/siggenes_cormatrix_ut.pdf")
+
+plot.cc <- lapply(sel.sig, function(x){
+  
+  corm <- NULL
+  
+  magic.cellcycle <- t(counts[, colnames(counts) %in% names(ut@sigData[[x]]@sigDict), drop = FALSE])
+  
+  if(nrow(magic.cellcycle) > 0){
+    
+    colnames(magic.cellcycle) <- paste0("cell", 1:5062)
+    sel.var <- which(apply(magic.cellcycle,1, var)>0.03)
+    
+    magic.cellcycle <- magic.cellcycle[sel.var, , drop = FALSE]
+    
+    if(nrow(magic.cellcycle) > 1){
+      
+      corm <- cor(t(magic.cellcycle))
+      
+      pheatmap(corm,
+             color = rev(met.brewer("Cassatt1",n=21,type="continuous")), 
+             cluster_rows = TRUE, cluster_cols = TRUE, main = x, breaks = breaksList,
+             scale = "none")
+    }
+    }
+})
+dev.off()
+
+```
+
+### Check expression of the most variable genes in each signature
+```{r}
+cols <- as.character(lacroix_palette("PassionFruit", type = "continuous", n=3))
+names(cols) <- levels(ut.metadata$leiden_scVI)
+
+pdf("output/siggenes_heatmap_ut.pdf")
+plot.cc <- lapply(sel.sig, function(x){
+      bs <- list()
+      
+      magic.cellcycle <- t(counts[, colnames(counts) %in% names(ut@sigData[[x]]@sigDict), drop = FALSE])
+      
+      if(nrow(magic.cellcycle) > 0){
+        colnames(magic.cellcycle) <- paste0("cell", 1:5062)
+        sel.var <- which(apply(magic.cellcycle, 1, var)>0.03)
+        
+        magic.cellcycle <- magic.cellcycle[sel.var, , drop = FALSE]
+        rownames(ut.metadata) <- colnames(magic.cellcycle)
+    
+        if(nrow(magic.cellcycle) > 1){
+          bs <- sig.ranksum(magic.cellcycle, ns=1:nrow(magic.cellcycle), full.return = TRUE)
+          
+          pheatmap(bs$dat, 
+             annotation_col = ut.metadata[bs$pat.order, colnames(ut.metadata)=="leiden_scVI",  drop = FALSE], 
+             annotation_colors = list(leiden_scVI=cols), 
+             color = viridisLite::viridis(n=100, option="G", direction = -1), 
+             cluster_rows = FALSE, cluster_cols = FALSE, main = x,
+             show_colnames = FALSE, scale = "row")
+          }
+      }
+      
+      return(bs)
+      })
+dev.off()
+
+names(plot.cc) <- sel.sig
+
+names(plot.cc)[unlist(lapply(plot.cc, function(x){length(x)==0}))] # check signatures with <= 1 most variable genes
+```
+
+# Select final signatures and make figures ----------------
+
+We selected the most variable signatures across clusters which also avoid redundancy and exhibit robustness in the the directionality of expression for the most variable genes in signature.
+```{r}
+sel.paper <- c("oxidative2",
+               "rESR_RP","s_histone",
+               "m_gresham", "hsp2","carb_reserve_metab", "glycolysis")
+```
+
+## Figure 2B
+
+```{r}
+
+sel.paper.median <- paste0(sel.paper, "_median")
+df.plot <- df[match(sel.paper.median, rownames(df)), order(colnames(df))]
+
+pheatmap::pheatmap(df.plot,
+             color = viridisLite::viridis(n=100, option="G", direction = -1), 
+             cluster_rows = FALSE, cluster_cols = FALSE,
+             scale = "row", filename = "output/figure2b-heatmap_visionSig_ut_sel_bresat.pdf")
+
+```
+
+## Figure 2 - figure supplement 1A
+
+```{r}
+sel.scores <- sigtb[, colnames(sigtb) %in% c(sel.paper, "leiden_scvi")]
+
+df.ecdf <- sel.scores %>% 
+  reshape2::melt()
+
+df.ecdf$variable <- factor(df.ecdf$variable, 
+                           levels = c("oxidative2",
+                                      "rESR_RP","s_histone",
+                                      "m_gresham", "hsp2","carb_reserve_metab", "glycolysis"),
+                           labels = c("oxidative stress", 
+                                      "RP", "S phase",
+                                      "M phase", "heat-shock stress", "carb. reserve metab.", "glycolysis"),
+                           ordered = TRUE)
+
+p1 <- ggplot(df.ecdf,
+       aes(value, color = leiden_scvi)) +
+  stat_ecdf() +
+  scale_color_manual(values=lacroix_palette("PassionFruit", type = "continuous", n=3)) +
+  facet_wrap(~variable, scales = "free_x") +
+  scale_x_continuous(name = "signature score") +
+  scale_y_continuous(name = "ECDF") +
+  theme(panel.background = element_rect(fill = "white", colour = NA), 
+        panel.border = element_rect(fill = NA, colour = "grey20"), 
+        panel.grid = element_line(colour = "grey92"),
+        panel.grid.minor = element_line(size = rel(0.5)), 
+        strip.background = element_blank(),
+        legend.key = element_rect(fill = "white", colour = NA), 
+        legend.title = element_blank(), complete = TRUE)
+
+ggsave("output/figure2supp1a-ecdf_sigscores_clusters.pdf", p1, height = 4)
+
+```
+
+
+### Figure 2C & Figure 2 - figure supplement 1B-C
+
+```{r}
+
+pdf("output/figure2csupp1bc-siggenes_heatmap_ut.pdf")
+plot.cc <- lapply(sel.paper, function(x){
+      bs <- list()
+      
+      magic.cellcycle <- t(counts[, colnames(counts) %in% names(ut@sigData[[x]]@sigDict), drop = FALSE])
+      
+      if(nrow(magic.cellcycle) > 0){
+        colnames(magic.cellcycle) <- paste0("cell", 1:5062)
+        sel.var <- which(apply(magic.cellcycle, 1, var)>0.03)
+        
+        magic.cellcycle <- magic.cellcycle[sel.var, , drop = FALSE]
+        rownames(ut.metadata) <- colnames(magic.cellcycle)
+    
+        if(nrow(magic.cellcycle) > 1){
+          bs <- sig.ranksum(magic.cellcycle, ns=1:nrow(magic.cellcycle), full.return = TRUE)
+          
+          pheatmap(bs$dat, 
+             annotation_col = ut.metadata[bs$pat.order, colnames(ut.metadata)=="leiden_scVI",  drop = FALSE], 
+             annotation_colors = list(leiden_scVI=cols), 
+             color = viridisLite::viridis(n=100, option="G", direction = -1), 
+             cluster_rows = FALSE, cluster_cols = FALSE, main = x,
+             show_colnames = FALSE, scale = "row")
+          }
+      }
+      
+      return(bs)
+      })
+dev.off()
+
+names(plot.cc) <- sel.paper
+
+```
+
+### Figure 2E-F & Figure 2 - figure supplement 2
+
+```{r}
+ranksums <- lapply(plot.cc, "[[", "ranksum")
+
+df.ranksums <- plyr::ldply(ranksums)
+rownames(df.ranksums) <- df.ranksums[,1]
+df.ranksums <- data.frame(t(df.ranksums[, -1]))
+
+p2 <- ggplot(df.ranksums, aes(x=m_gresham, y=s_histone, color = hsp2))+
+  geom_point(size = 0.5) +
+  scale_color_viridis_c()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+ggsave("output/figure2e-ranksums_mg1_stot_colorhsp.pdf", p2, width = 4.5, height = 4)
+
+p3 <- ggplot(df.ranksums, aes(x=m_gresham, y=s_histone, color = oxidative2))+
+  geom_point(size = 0.5) +
+  scale_color_viridis_c()+
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+#p5
+ggsave("output/figure2f-ranksums_mg1_stot_coloroxi.pdf", p3, width = 4.5, height = 4)
+
+
+p4 <- ggplot(df.ranksums, aes(x=m_gresham, y=s_histone, color = glycolysis))+
+  geom_point(size = 0.5) +
+  scale_color_viridis_c()+
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+#p5
+ggsave("output/figure2supp2a-ranksums_mg1_stot_colorglycolysis.pdf", p4, width = 4.5, height = 4)
+
+p5 <- ggplot(df.ranksums, aes(x=m_gresham, y=s_histone, color = rESR_RP))+
+  geom_point(size = 0.5) +
+  scale_color_viridis_c()+
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+#p5
+ggsave("output/figure2supp2b-ranksums_mg1_stot_colorrp.pdf", p5, width = 4.5, height = 4)
+```
+# Explore core signatures in yeast (ESR) and in C.albicans (hog1-signature) -----
+
+## Figure 2 - figure supplement 4
+```{r}
+
+core.signatures <- c("ESR_iESR", "hog1_UP", "hog1_DOWN")
+
+pdf("output/figure2suppfig4-coresig_cormatrix_ut.pdf")
+
+plot.core <- lapply(core.signatures, function(x){
+  corm <- NULL
+  
+  magic.core<- t(counts[, colnames(counts) %in% names(ut@sigData[[x]]@sigDict), drop = FALSE])
+  
+  colnames(magic.core) <- paste0("cell", 1:5062)
+  
+  sel.var <- which(apply(magic.core,1, var)>0.03)
+    
+  magic.core <- magic.core[sel.var, , drop = FALSE]
+  
+  corm <- cor(t(magic.core))
+  
+  pheatmap(corm,
+             color = rev(met.brewer("Cassatt1", n=21,type="continuous")), 
+             cluster_rows = TRUE, cluster_cols = TRUE, main = x, breaks = breaksList,
+             scale = "none")
+})
+dev.off()
+
+```
+
+# Plot hsp70 ttr1 single-cell expression ------------
+
+
+```{r}
+hsp70 <- counts[, colnames(counts)=="HSP70"]
+summary(log2(hsp70))
+hist(log2(hsp70))
+
+ttr1 <- counts[, colnames(counts)=="TTR1"]
+summary(log2(ttr1))
+hist(log2(ttr1))
+```
+## Figure 2H
+
+```{r}
+hsp70high_ttr1low <- log2(hsp70) > 0.2 & log2(ttr1) <= 0.2
+hsp70mid_ttr1mid <- log2(hsp70) > 0.2 & log2(ttr1) > 0.2
+hsp70low_ttr1high <- log2(hsp70) <= 0.2 & log2(ttr1) > 0.2
+hsp70low_ttr1low <- log2(hsp70) <= 0.2 & log2(ttr1) <= 0.2
+
+color_point <- c("#4daf4a", #green
+                 "#e41a1c", #red
+                 "grey",
+                 "black"#blue
+                )
+group <- rep("hsp70low_ttr1low", length(hsp70))
+group <- ifelse(hsp70high_ttr1low==TRUE, "hsp70high_ttr1low", group)
+group <- ifelse(hsp70mid_ttr1mid==TRUE, "hsp70mid_ttr1mid", group)
+group <- ifelse(hsp70low_ttr1high==TRUE, "hsp70low_ttr1high", group)
+
+
+
+library(ggplot2)
+library(ggExtra)
+df <- data.frame(hsp70 = hsp70,
+                 ttr1 = ttr1,
+                  group = group)
+
+p6 <- ggplot(df, aes(y=ttr1, x=hsp70, color = group))+
+  geom_point(size = 0.5) +
+  scale_color_manual(values = color_point, guide=FALSE) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.title=element_blank(),legend.position="none")
+p6 <- ggMarginal(p6, type = "histogram")
+
+ggsave("output/figure2h-ttr1_hsp70_scatterplot.pdf", p6, width = 4, height = 3)
+
+```
+
+```{r}
+table(group)
+
+high.hsp70 <- log2(hsp70) > 0.2
+high.ttr1 <- log2(ttr1) > 0.2
+
+table(high.hsp70, high.ttr1)
+
+mcnemar.test(table(high.hsp70, high.ttr1))
+```
+
+
+# Plot hsp70 ttr1 microscopy ------------
+
+## Import data
+
+```{r}
+datadir <- here("data", "microscopy", "csvs")
+
+files <- list.files(datadir, full.names = TRUE, recursive = TRUE)
+files <- files[grep("day0", files)]
+
+
+all.df.list <- lapply(files, function(x){
+  df <- read.csv(x)
+  df <- df[,-1]
+  df[["channel"]] <- c("R", "G", "B")
+  
+  tb <- melt(df)
+
+  filename <- unlist(lapply(strsplit(x, "/"), "[", 10))
+  foldername <- unlist(lapply(strsplit(x, "/"), "[", 9))
+  tb$drug.series <- unlist(lapply(strsplit(foldername, "-"), "[", 2))
+  image <- unlist(lapply(strsplit(filename, "-"), "[", 3))
+  cell <- unlist(lapply(strsplit(as.character(tb$variable), "Area|Min|Max|Mean"), "[", 2))
+  tb$image <- paste0(tb$drug.series, image)
+  tb$cell <- paste0(tb$image, cell, sep="_")
+  tb$type <- "Area"
+  tb$type[grep("Mean", tb$variable)] <- "Mean"
+  tb$type[grep("Min", tb$variable)] <- "Min"
+  tb$type[grep("Max", tb$variable)] <- "Max"
+  
+  tb$measure <- paste0(tb$type, tb$channel)
+  return(tb)
+})
+
+all.df <- plyr::ldply(all.df.list)
+```
+
+```{r}
+wide <- all.df %>%
+  select(cell, drug.series, image, value, measure) %>%
+  tidyr::pivot_wider(names_from = measure, values_from = value)
+```
+
+## Explore the two experimental batches
+```{r}
+ggplot(wide, aes(x=1:nrow(wide),y=MeanG, color = image)) +
+  geom_point(size = 0.5) + 
+  facet_wrap(~drug.series, scales = "free") +
+  theme(legend.position = "none")
+
+ggplot(wide, aes(x=1:nrow(wide),y=MeanR, color = image)) +
+  geom_point() + 
+  facet_wrap(~drug.series, scales = "free") +
+  theme(legend.position = "none")
+```
+## Exlcude outlier measurements and scale within each experimental batch
+```{r}
+
+wide.noOutlier <- wide[wide$MeanG < 2000 & wide$MeanR<300, ]
+
+wide.noOutlier <- wide.noOutlier %>%
+  group_by(drug.series) %>%
+  mutate(scale_meang = scale(MeanG),
+         scale_meanr = scale(MeanR))
+
+
+ggplot(wide.noOutlier, aes(x=1:nrow(wide.noOutlier),y=scale_meang, color = image)) +
+  geom_point() + 
+  facet_grid(~drug.series, scales = "free") +
+  theme(legend.position = "none")
+
+ggplot(wide.noOutlier, aes(x=1:nrow(wide.noOutlier),y=scale_meanr, color = image)) +
+  geom_point() + 
+  facet_grid(~drug.series, scales = "free") +
+  theme(legend.position = "none")
+```
+## Figure 2j 
+
+```{r}
+summary(wide.noOutlier$scale_meanr)
+summary(wide.noOutlier$scale_meang)
+
+
+gth <- 0.3
+rth <- 0.45
+
+
+wide.noOutlier$group <- "hsp70low_ttr1low"
+wide.noOutlier$group <- ifelse(wide.noOutlier$scale_meanr<=rth & wide.noOutlier$scale_meang>gth, "hsp70high_ttr1low", wide.noOutlier$group)
+wide.noOutlier$group <- ifelse(wide.noOutlier$scale_meanr>rth & wide.noOutlier$scale_meang<=gth, "hsp70low_ttr1high", wide.noOutlier$group)
+wide.noOutlier$group <- ifelse(wide.noOutlier$scale_meanr>rth & wide.noOutlier$scale_meang>gth, "hsp70high_ttr1high", wide.noOutlier$group)
+
+
+
+color_point <- c("black", #blue
+                 "#4daf4a", #green
+                 "#e41a1c", #red
+                 "grey"
+                )
+
+p7 <- ggplot(wide.noOutlier, aes(x=scale_meang, y=scale_meanr, color=group))+
+    geom_point(size = 0.5) +
+  scale_color_manual(values = color_point, guide=FALSE) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.title=element_blank(),legend.position="none")
+
+p7 <- ggMarginal(p7, type = "histogram")
+p7
+
+ggsave("output/figure2j-ttr1_hsp70_microscopyscatterplot.pdf", p7, width = 4, height = 3)
+
+high.hsp70 <- wide.noOutlier$scale_meang > gth
+high.ttr1 <- wide.noOutlier$scale_meanr > rth
+
+table(high.hsp70, high.ttr1)
+
+mcnemar.test(table(high.hsp70, high.ttr1))
+
+```
+
+
+
+
