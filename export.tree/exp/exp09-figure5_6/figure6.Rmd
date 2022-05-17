@@ -1,0 +1,154 @@
+---
+title: "figure 6"
+author: "Vanessa Dumeaux"
+date: "5/11/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(here)
+source(here("src", "utils.R"))
+
+
+library(ViSEAGO)
+library(dplyr)
+library(ggplot2)
+library("LaCroixColoR")
+library(MetBrewer)
+
+Custom<-ViSEAGO::Custom2GO(here("data","ca.goa.txt"))
+
+myGENE2GO<-ViSEAGO::annotate(
+    "237561",
+    Custom
+)
+
+
+```
+
+
+#### day 3 and day 6 beta ----------------
+## Merge topGO results
+```{r}
+goterms <- readRDS("output/goterms_day3day6_alphabeta.rds")
+
+bp.dn.day6 = goterms$dn.day6$bp
+weight01.bp.dn.day6 = goterms$dn.day6$weight01.bp
+
+bp.dn.day3 = goterms$dn.day3$bp
+weight01.bp.dn.day3 = goterms$dn.day3$weight01.bp
+
+
+BP_sResults<-ViSEAGO::merge_enrich_terms(
+    cutoff=0.01,
+    Input=list(
+      beta_day3=c(
+        "bp.dn.day3",
+        "weight01.bp.dn.day3"
+  ),
+        beta_day6=c(
+          "bp.dn.day6",
+          "weight01.bp.dn.day6"
+        )
+    )
+)
+
+```
+```{r}
+myGOs<-ViSEAGO::build_GO_SS(
+    gene2GO=myGENE2GO,
+    enrich_GO_terms=BP_sResults
+)
+```
+## Compute semantic similarity
+```{r}
+
+myGOs<-ViSEAGO::compute_SS_distances(
+    myGOs,
+    distance="Wang"
+)
+```
+```{r}
+Wang_clusters_wardD2<-ViSEAGO::GOterms_heatmap(
+    myGOs,
+    showIC=FALSE,
+    showGOlabels =TRUE,
+    heatmap_colors = c("#FFFFFF","#56154D"),
+    GO.tree=list(
+        tree=list(
+            distance="Wang",
+            aggreg.method="ward.D2"
+        ),
+        cut=list(
+            dynamic=list(
+                pamStage=TRUE,
+                pamRespectsDendro=TRUE,
+                deepSplit=2,
+                minClusterSize =2
+            )
+        )
+    ),
+    samples.tree=NULL
+)
+```
+
+## export results in table
+
+```{r}
+ViSEAGO::show_table(
+  Wang_clusters_wardD2, 
+  file = "output/comparison_go_day6_day3_beta.txt"
+)
+```
+
+
+## Figure 6
+```{r}
+tb <- read.table("output/comparison_go_day6_day3_beta.txt", sep="\t", header = TRUE)
+
+grep.size <- function(x){
+  frac <- unlist(lapply(strsplit(x, "\\("), "[", 2))
+  num.frac <- unlist(lapply(strsplit(frac, "/"), "[", 1))
+  num.frac <- as.numeric(num.frac)
+  return(num.frac)
+}
+
+tb$size.day3 <- grep.size(tb$beta_day3.genes_frequency)
+tb$size.day6 <- grep.size(tb$beta_day6.genes_frequency)
+
+tb.list <- list()
+tb.list$day3 <- tb[tb$beta_day3.pvalue < 0.01 & tb$beta_day6.pvalue > 0.01,] 
+tb.list$both <- tb[tb$beta_day3.pvalue < 0.01 & tb$beta_day6.pvalue < 0.01,] 
+tb.list$day6 <- tb[tb$beta_day3.pvalue > 0.01 & tb$beta_day6.pvalue < 0.01,] 
+
+plot.dat <- go.compare.dotplot(sel = "beta")
+```
+
+```{r}
+pday3 <- ggplot(plot.dat, aes(x=reorder(stringr::str_wrap(term,80), rev(GO.cluster)), y=`-log10(pvalue)`, color = day, size = size)) +
+  geom_point() +
+  scale_color_manual(values = c(lacroix_palette("PassionFruit", type = "continuous", n=6)[4], met.brewer("Cross", 6)[3])) +
+  coord_flip() +
+  theme_light() +
+  ylim(0,15) +
+  facet_grid(GO.cluster~sigday, scales = "free", space='free_y') +
+   theme(axis.text.y= element_text(size =6),
+    panel.grid.major.x = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.x = element_blank()
+  ) +
+  xlab("") +
+  ylab("-log10(weight01 p-value")
+
+pday3
+
+ggsave("output/figure6-go_day3-6_beta.pdf", pday3, width =9, height = 7)
+```
+
+
+
+
