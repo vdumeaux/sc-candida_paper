@@ -1,0 +1,156 @@
+---
+title: "pseudobulk deseq2"
+author: "Vanessa Dumeaux"
+date: "4/26/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(here)
+set.seed(321)
+library(VISION)
+
+vis.pth <- here("data", "data04-VISION")
+
+finalall <- readRDS(file.path(vis.pth, "utfczcsprapa-adjLogcounts_vis.rds"))
+
+all.latent <- finalall@LatentSpace
+all.metadata <- finalall@metaData
+sig.scores <- finalall@SigScores
+
+
+```
+
+
+
+```{r}
+scvi.pth <- here("data", "data03-scvi")
+
+raw.counts <- read.csv(file.path(scvi.pth, "utfczcsprapa_raw.csv"), row.names = 1)
+
+
+```
+```{r}
+# Load libraries
+library(scater)
+library(Seurat)
+library(tidyverse)
+library(cowplot)
+library(Matrix.utils)
+library(edgeR)
+library(dplyr)
+library(magrittr)
+library(Matrix)
+library(purrr)
+library(reshape2)
+library(S4Vectors)
+library(tibble)
+library(SingleCellExperiment)
+library(pheatmap)
+library(apeglm)
+library(png)
+library(DESeq2)
+library(RColorBrewer)
+library(dplyr)
+library(stringr)
+library(magrittr)
+
+source(here("src", "utils.R"))
+```
+
+```{r}
+obj.list <- prep.pseudobulk(all.metadata = all.metadata)
+metadata <- obj.list$metadata
+pb <- obj.list$pb
+```
+
+##### cluster1 FCZ vs CSP
+
+```{r}
+clusters <- levels(metadata$cluster_id)
+clusters
+
+# Subset the metadata to only FCZ in cluster 0 and cluster 3
+cluster_metadata <- metadata[which(metadata$cluster_id %in% c(clusters[1]) & metadata$group_id %in% c("FCZ_2","FCZ_3","CSP_2")), ]
+head(cluster_metadata)
+
+# Assign the rownames of the metadata to be the sample IDs
+rownames(cluster_metadata) <- cluster_metadata$sample_id
+head(cluster_metadata)
+
+# Subset the counts
+counts <- pb[[clusters[1]]]
+
+cluster_counts <- data.frame(counts[, which(colnames(counts) %in% rownames(cluster_metadata))])
+
+# Check that all of the row names of the metadata are the same and in the same order as the column names of the counts in order to use as input to DESeq2
+all(rownames(cluster_metadata) == colnames(cluster_counts))  
+```
+```{r}
+dds <- DESeqDataSetFromMatrix(cluster_counts, 
+                              colData = cluster_metadata, 
+                              design = ~ group_id + batch)
+```
+
+```{r}
+# Transform counts for data visualization
+rld <- rlog(dds, blind=TRUE)
+
+# Plot PCA
+
+DESeq2::plotPCA(rld, intgroup = "group_id")
+```
+```{r}
+# Extract the rlog matrix from the object and compute pairwise correlation values
+rld_mat <- assay(rld)
+rld_cor <- cor(rld_mat)
+
+# Plot heatmap
+pheatmap(rld_cor, annotation = cluster_metadata[, c("group_id"), drop=F])
+```
+```{r}
+dds <- DESeq(dds)
+
+# Output results of Wald test for contrast for stim vs ctrl
+levels(cluster_metadata$group_id)[2]
+levels(cluster_metadata$group_id)[1]
+
+contrast <- c("group_id", levels(cluster_metadata$group_id)[2], levels(cluster_metadata$group_id)[1])
+
+# resultsNames(dds)
+res <- results(dds, 
+               contrast = contrast,
+               alpha = 0.1)
+
+plotDispEsts(dds)
+```
+```{r}
+# Set thresholds
+padj_cutoff <- 0.1
+
+res_tbl <- res %>%
+        data.frame() %>%
+        rownames_to_column(var="gene") %>%
+        as_tibble()
+
+
+# Subset the significant results
+sig_res <- dplyr::filter(res_tbl, padj < padj_cutoff) %>%
+        dplyr::arrange(padj)
+
+# Check significant genes output
+sig_res
+
+write.table(sig_res, 
+            "output/siggenes_fczXcsp_cluster1_fdr0.1.txt", 
+            sep="\t", col.names = TRUE, quote = FALSE)
+```
+
+
+
+
+
