@@ -128,7 +128,7 @@ plot.dat <- go.compare.dotplot(sel = "alpha")
 pday3.alpha <- ggplot(plot.dat, aes(x=reorder(stringr::str_wrap(term,80), rev(GO.cluster)), y=`-log10(pvalue)`, color = day, size = size)) +
   geom_point() +
   scale_color_manual(values = c(lacroix_palette("PassionFruit", type = "continuous", n=6)[1],
-                                met.brewer("Cross", 6)[1])) +
+                                "#c994c7")) +
   coord_flip() +
   theme_light() +
   facet_grid(GO.cluster~sigday, scales = "free", space='free_y') +
@@ -147,7 +147,7 @@ plot.dat[plot.dat$term=="translation",]
 pday3.alpha <- ggplot(plot.dat, aes(x=reorder(stringr::str_wrap(term,80), rev(GO.cluster)), y=`-log10(pvalue)`, color = day, size = size)) +
   geom_point() +
   scale_color_manual(values = c(lacroix_palette("PassionFruit", type = "continuous", n=6)[1],
-                                met.brewer("Cross", 6)[1])) +
+                                "#c994c7")) +
   coord_flip() +
   theme_light() +
   ylim(0,35) + 
