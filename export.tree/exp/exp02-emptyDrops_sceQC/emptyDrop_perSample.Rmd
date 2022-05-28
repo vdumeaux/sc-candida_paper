@@ -1,0 +1,150 @@
+---
+title: "emptydrops per sample"
+author: "Vanessa Dumeaux"
+date: "04/18/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE}
+library(here)
+library(Seurat)
+library(rjson)
+library(Matrix)
+library(SingleCellExperiment)
+library(rtracklayer)
+library(scuttle)
+
+
+library(BiocParallel)
+register(MulticoreParam(workers=50))
+
+genome_dir <-  here("data", "data01-preprocessing", "genome")
+alevin_output <-  here("data", "data01-preprocessing", "sc-alevin", "alevin_output")
+
+final <- readRDS(here("data", "final_sc_tibble_2.0.rds"))
+
+sample.names <- final$ids
+```
+
+```{r}
+
+e.out <- list()
+
+seurat_object <- lapply(seq_along(sample.names),function(x){
+    
+  # import alevin USA data
+  af_raw <- readMM(file.path(alevin_output, paste0(sample.names[x], "_quant_res"), "alevin","quants_mat.mtx"))
+  
+  qfile <- file.path(file.path(alevin_output, paste0(sample.names[x], "_quant_res")), "quant.json")
+  meta_info <- fromJSON(file = qfile)
+  ng <- meta_info$num_genes
+  
+  ng <- as.integer(ng/3)
+  
+  # Sum spliced and ambiguous counts
+  which_counts <- c("S", "A")
+  
+  rd <- list("S" = seq(1, ng), "U" =  seq(ng + 1, 2 * ng),
+             "A" =  seq(2 * ng + 1, 3 * ng))
+  
+  o <- af_raw[, rd[[which_counts[1]]], drop = FALSE]
+  
+  for (wc in which_counts[-1]) {
+      o <- o + af_raw[, rd[[wc]], drop = FALSE]
+      }
+      
+  # read in gene name file and cell barcode file
+  afg <- read.csv(file.path(alevin_output, paste0(sample.names[x], "_quant_res"), "alevin", "quants_mat_cols.txt"),
+                  strip.white = TRUE, header = FALSE, nrows = ng, 
+                  col.names = c("gene_ids"), row.names = 1)
+  afc <- read.csv(file.path(alevin_output, paste0(sample.names[x], "_quant_res"), "alevin", "quants_mat_rows.txt"),
+                  strip.white = TRUE, header = FALSE,
+                  col.names = c("barcodes"), row.names = 1)
+  
+  # Make single-cell experiment
+  sce <- SingleCellExperiment(list(counts = t(o)),
+                              colData = afc,
+                              rowData = afg)
+  
+  # Filter genes with 0 counts and cells with less than 5 or more than 2000 counts
+  sce <- sce[rowSums(assay(sce)) > 0,]
+  
+  sce <- sce[ , colSums(assay(sce)) > 5 & colSums(assay(sce)) < 2000]
+  
+
+  # select cells with FDR < 0.08 (emptydrops counts lower than 80)
+  for (lowercell in c(50, 80, 100)){
+    e.out[[paste("all", lowercell, sep = ".")]] <- DropletUtils::emptyDrops(assay(sce), lower = lowercell, BPPARAM = bpparam())
+  }
+  
+  
+  is.out <- e.out$all.80$FDR < 0.01
+  filtered.sce <- sce[, is.out==TRUE & !is.na(is.out)]
+  
+  # convert to seurat object
+  sobj <- CreateSeuratObject(counts = assay(filtered.sce), project = sample.names[x])
+  
+  # add metadata
+  sobj$orig.ident <- sample.names[x]
+  sobj$drug <- final$drug[x]
+  sobj$day <- final$day[x]
+  sobj$batch <- final$batch[x]
+  sobj$nruns <- final$n_runs[x]
+  sobj$drug_day <- paste(sobj$drug, sobj$day, sep = "_")
+  
+  # export objects
+  return(list(sce=sce, e.out= e.out, filtered.seurat=sobj))
+
+})
+
+names(seurat_object) <- sample.names
+
+
+
+candida.big <- merge(seurat_object[[1]]$filtered.seurat, y = c(seurat_object[[2]]$filtered.seurat, seurat_object[[3]]$filtered.seurat, seurat_object[[4]]$filtered.seurat, seurat_object[[5]]$filtered.seurat,
+                                               seurat_object[[6]]$filtered.seurat, seurat_object[[7]]$filtered.seurat, seurat_object[[8]]$filtered.seurat, seurat_object[[9]]$filtered.seurat,
+                                               seurat_object[[10]]$filtered.seurat, seurat_object[[11]]$filtered.seurat),
+                     add.cell.ids = sample.names, project = "alevin-candida")
+candida.big
+
+
+
+sce <- as.SingleCellExperiment(candida.big)
+```
+
+# Fix gene names and add per cell qc
+```{r}
+gtf <- as.data.frame(rtracklayer::import(here(genome_dir, "ca_original_genomic.gtf")))
+gtf$gene_id <- gsub("gene-CAALFM_", "", gtf$gene_id)
+
+
+gtf.sub <- unique(gtf[, c("seqnames", "gene_id", "gene_name")])
+idx <- match(rownames(sce), gtf.sub$gene_id)
+gtf.sub <- gtf.sub[idx,]
+
+rownames(sce) <- ifelse(!is.na(gtf.sub$gene_name), gtf.sub$gene_name, rownames(sce))
+rownames(sce) <- gsub(",", "-", rownames(sce))
+
+sig.scuttle <- function(sce.obj){
+    is.ribo <- grep("^RP[LS]", rownames(sce.obj))
+    sce.obj <- scuttle::addPerCellQC(sce.obj, subsets=list(Ribo=is.ribo))
+    return(sce.obj)
+}
+
+sce <- sig.scuttle(sce)
+
+summary(sce$sum)
+summary(sce$detected)
+
+colnames(colData(sce))
+
+saveRDS(sce, here("data", "data02-emptyDrops_sceQC", "filtered-sce.rds"))
+```
+
+
+
+

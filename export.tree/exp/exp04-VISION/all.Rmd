@@ -1,0 +1,71 @@
+---
+title: "creaet vision objects"
+author: "Vanessa Dumeaux"
+date: "4/21/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(R.utils)
+library(BiocParallel)
+library(here)
+library(VISION)
+
+ncores <- 24
+register(MulticoreParam(workers=ncores))
+options(mc.cores = 80)
+
+vis.pth <- here("data", "data04-VISION")
+scvi.pth <- here("data", "data03-scvi")
+
+
+nms <- c("ut_0", "utfczcsprapa", "fcz_3_6final")
+
+```
+
+```{r}
+
+vis.obj <- function(x){
+    # Read in expression counts (Genes X Cells) 
+    counts <- read.csv(file.path(scvi.pth, paste0(x, "-adjLogcounts_norm.csv")))
+    counts <- subset(counts, select = -c(X))
+    
+    latent_scVI <- read.csv(file.path(scvi.pth, paste0(x, "-adjLogcounts_latent.csv")))
+    latent_scVI <- subset(latent_scVI, select = -c(X))
+    
+    clusters <- read.csv(file.path(scvi.pth, paste0(x, "-adjLogcounts_labels.csv")))
+    clusters <- subset(clusters,select = -c(X))
+    clusters$leiden_scVI <- as.factor(clusters$leiden_scVI)
+    clusters$day <- as.factor(clusters$day)
+    clusters$batch <- as.factor(clusters$batch)
+    clusters$nruns <- as.factor(clusters$nruns)
+    clusters$X_scvi_batch <- as.factor(clusters$X_scvi_batch)
+
+    cl.tb <- table(clusters$leiden_scVI)
+    cl.sel <- names(cl.tb)[cl.tb < 200]
+    clusters$leiden_scVI_2 <- as.character(clusters$leiden_scVI)
+    clusters$leiden_scVI_2[clusters$leiden_scVI %in% cl.sel] <- "others"
+
+    
+    vis <- Vision(data = t(counts), 
+              signatures = file.path(vis.pth, "suppTable1_geneSig.gmt"),
+              latentSpace= latent_scVI,meta=data.frame(clusters), 
+              min_signature_genes = 2)
+    
+    vis <- analyze(vis)
+    
+    saveRDS(vis, file.path(vis.pth, paste0(x, "-adjLogcounts_vis.rds")))
+    
+    return(list(vis=vis))
+    
+}
+
+res <- bplapply(nms, vis.obj)
+
+names(res) <- nms
+
+```
