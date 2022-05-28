@@ -1,0 +1,167 @@
+---
+title: "figure 5"
+author: "Vanessa Dumeaux"
+date: "5/11/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(here)
+source(here("src", "utils.R"))
+
+library(dplyr)
+library(ggplot2)
+library(MetBrewer)
+
+
+library(ViSEAGO)
+library("LaCroixColoR")
+Custom<-ViSEAGO::Custom2GO(here("data","ca.goa.txt"))
+
+myGENE2GO<-ViSEAGO::annotate(
+    "237561",
+    Custom
+)
+```
+# compare with day 3and day 6 fcz alpha cells
+
+# compare day 3 and day 6 go terms associated with alpha cells
+
+
+## Merge topGO results for apha cells --------
+```{r}
+goterms <- readRDS("output/goterms_day3day6_alphabeta.rds")
+
+bp.up.day6 = goterms$up.day6$bp
+weight01.bp.up.day6 = goterms$up.day6$weight01.bp
+
+
+bp.up.day3 = goterms$up.day3$bp
+weight01.bp.up.day3 = goterms$up.day3$weight01.bp
+
+
+BP_sResults<-ViSEAGO::merge_enrich_terms(
+    cutoff=0.01,
+    Input=list(
+      alpha_day3=c(
+        "bp.up.day3",
+        "weight01.bp.up.day3"
+  ),
+        alpha_day6=c(
+          "bp.up.day6",
+          "weight01.bp.up.day6"
+        )
+    )
+)
+
+```
+```{r}
+myGOs<-ViSEAGO::build_GO_SS(
+    gene2GO=myGENE2GO,
+    enrich_GO_terms=BP_sResults
+)
+```
+## Compute semantic similarity
+```{r}
+
+myGOs<-ViSEAGO::compute_SS_distances(
+    myGOs,
+    distance="Wang"
+)
+```
+```{r}
+Wang_clusters_wardD2<-ViSEAGO::GOterms_heatmap(
+    myGOs,
+    showIC=FALSE,
+    showGOlabels =TRUE,
+    heatmap_colors = c("#FFFFFF","#56154D"),
+    GO.tree=list(
+        tree=list(
+            distance="Wang",
+            aggreg.method="ward.D2"
+        ),
+        cut=list(
+            dynamic=list(
+                pamStage=TRUE,
+                pamRespectsDendro=TRUE,
+                deepSplit=2,
+                minClusterSize =2
+            )
+        )
+    ),
+    samples.tree=NULL
+)
+```
+
+## export results in table
+
+```{r}
+ViSEAGO::show_table(
+  Wang_clusters_wardD2, 
+  file = "output/comparison_go_day6_day3_alpha.txt"
+)
+```
+
+## Figure 5
+```{r}
+
+
+tb <- read.table("output/comparison_go_day6_day3_alpha.txt", sep="\t", header = TRUE)
+
+
+tb$size.day3 <- grep.size(tb$alpha_day3.genes_frequency)
+tb$size.day6 <- grep.size(tb$alpha_day6.genes_frequency)
+
+tb.list <- list()
+tb.list$day3 <- tb[tb$alpha_day3.pvalue < 0.01 & tb$alpha_day6.pvalue > 0.01,] 
+tb.list$both <- tb[tb$alpha_day3.pvalue < 0.01 & tb$alpha_day6.pvalue < 0.01,] 
+tb.list$day6 <- tb[tb$alpha_day3.pvalue > 0.01 & tb$alpha_day6.pvalue < 0.01,] 
+
+plot.dat <- go.compare.dotplot(sel = "alpha")
+```
+
+```{r}
+pday3.alpha <- ggplot(plot.dat, aes(x=reorder(stringr::str_wrap(term,80), rev(GO.cluster)), y=`-log10(pvalue)`, color = day, size = size)) +
+  geom_point() +
+  scale_color_manual(values = c(lacroix_palette("PassionFruit", type = "continuous", n=6)[1],
+                                "#c994c7")) +
+  coord_flip() +
+  theme_light() +
+  facet_grid(GO.cluster~sigday, scales = "free", space='free_y') +
+  theme(axis.text.y= element_text(size =6),
+    panel.grid.major.x = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.x = element_blank()
+  ) +
+  xlab("") +
+  ylab("-log10(weight01 p-value")
+pday3.alpha
+
+plot.dat[plot.dat$term=="translation",]
+
+# fix max y so we can have the same range in all three facets (we will add the data point excluded because of this (translation day3 y = 55.37) using illustrator
+pday3.alpha <- ggplot(plot.dat, aes(x=reorder(stringr::str_wrap(term,80), rev(GO.cluster)), y=`-log10(pvalue)`, color = day, size = size)) +
+  geom_point() +
+  scale_color_manual(values = c(lacroix_palette("PassionFruit", type = "continuous", n=6)[1],
+                                "#c994c7")) +
+  coord_flip() +
+  theme_light() +
+  ylim(0,35) + 
+  facet_grid(GO.cluster~sigday, scales = "free", space='free_y') +
+  theme(axis.text.y= element_text(size =6),
+    panel.grid.major.x = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.x = element_blank()
+  ) +
+  xlab("") +
+  ylab("-log10(weight01 p-value")
+
+pday3.alpha
+
+ggsave("output/figure5-go_day3-6_alpha_full.pdf", pday3.alpha, width =9, height = 7)
+```
+
