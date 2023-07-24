@@ -162,7 +162,7 @@ sig_res <- dplyr::filter(res_tbl, padj < padj_cutoff) %>%
 sig_res
 
 write.table(sig_res, 
-            "output/figure3suppTable1a-pseudoDE_fcz_othersXrest_fdr0.1.txt", 
+            "output/appendix2suppTable1a-pseudoDE_fcz_othersXrest_fdr0.1.txt", 
             sep="\t", col.names = TRUE, quote = FALSE)
 
 ```
@@ -270,7 +270,7 @@ dotplot.sa.hyper <- gotable.top100 %>%
   theme_minimal() 
 
 
-ggsave("output/figure3supp2c-dotplot.go.fcz_othersvsrest_fdr0.1.pdf", dotplot.sa.hyper)
+ggsave("output/appendix2fig2c-dotplot.go.fcz_othersvsrest_fdr0.1.pdf", dotplot.sa.hyper)
 
 
 
@@ -310,7 +310,7 @@ clusters <- cbind(all.metadata, chrpct.tb)
 clusters$leiden_scVI <- factor(as.character(clusters$leiden_scVI), levels = as.character(c(0:23)), labels = as.character(c(1:24)), ordered = TRUE)
 ```
 
-## Figure 3 - figure supplement 2D
+## Appendix2 - figure 2D
 ```{r}
 
 p <- ggplot(clusters, aes(x=leiden_scVI, y=chr2))+
@@ -319,7 +319,7 @@ p <- ggplot(clusters, aes(x=leiden_scVI, y=chr2))+
           panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none")
 p
 
-ggsave("output/figure3supp2d-chr2.pdf", p)
+ggsave("output/appendix2fig2d-chr2.pdf", p)
 
 ```
 

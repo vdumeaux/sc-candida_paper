@@ -657,7 +657,7 @@ final.fig <- ggpubr::annotate_figure(figure,
                 left = text_grob("Frequency per bin", rot = 90)
                 )
 final.fig
-ggsave("output/figure3k-hsp70_fczcspgelda_timeseries_microscopy.pdf", final.fig, height = 4, width = 6)
+ggsave("output/appendix2fig1e-hsp70_fczcspgelda_timeseries_microscopy.pdf", final.fig, height = 4, width = 6)
 ```
 
 
