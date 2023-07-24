@@ -291,7 +291,7 @@ pheatmap::pheatmap(df.plot.sig.heatmap,
 
 ```
 
-## Figure 3 - figure supplement 1C
+## Appendix2 - figure supplement 1B
 ```{r}
 
 
@@ -300,12 +300,12 @@ p.glyc <- ggplot(subset(full.df, !leiden_scVI_2=="others"), aes(x=UMAP1, y=UMAP2
   scale_color_viridis_c()+
   theme_void()
 
-ggsave("output/figure3supp1c-umap_glycolysis.pdf", p.glyc, width = 4.2, height = 4)
+ggsave("output/appendix2supp1b-umap_glycolysis.pdf", p.glyc, width = 4.2, height = 4)
 
 ```
 
 
-## Figure 3 - figure supplement 1D
+## Appendix2 - figure supplement 1C
 
 ```{r}
 
@@ -348,7 +348,7 @@ p11 <- ggplot(subset(df.ecdf, !leiden_scVI_2=="others" & variable == "glycolysis
         legend.key = element_rect(fill = "white", colour = NA), complete = TRUE)
 
 p11
-ggsave("output/figure3supp1d-ecdf_glycolysis_drug_day.pdf", p11, height = 4, width = 5.5)
+ggsave("output/appendix2supp1c-ecdf_glycolysis_drug_day.pdf", p11, height = 4, width = 5.5)
 
 ks.test(full.df[full.df$drug_day=="UT_0", "glycolysis"],
         full.df[full.df$drug_day=="RAPA_2", "glycolysis"])
@@ -378,7 +378,7 @@ ggsave("output/figure3g-umap_hsp.pdf", p.hsp, width = 4, height = 3.5)
 
 ```
 
-## Figure 3J
+## Appendix2 - figure1G
 
 ```{r}
 p.hyperosm <- ggplot(subset(full.df, !leiden_scVI_2=="others"), aes(x=UMAP1, y=UMAP2, col = hyperosm_stress)) +
@@ -386,11 +386,11 @@ p.hyperosm <- ggplot(subset(full.df, !leiden_scVI_2=="others"), aes(x=UMAP1, y=U
   scale_color_viridis_c()+
   theme_void()
 
-ggsave("output/figure3j-umap_hyperosm.pdf", p.hyperosm, width = 4.5, height = 3.5)
+ggsave("output/appendix2figure1g-umap_hyperosm.pdf", p.hyperosm, width = 4.5, height = 3.5)
 
 ```
 
-## Figure 3 - figure supplement 3A
+## Figure 3 - figure supplement 2A
 
 ```{r}
 
@@ -409,34 +409,26 @@ p2 <- ggplot(df.ecdf,
         legend.key = element_rect(fill = "white", colour = NA), 
         legend.title = element_blank(), complete = TRUE)
 
-ggsave("output/figure3supp3a-ecdf_sigscores_clusters.pdf", p2, height = 4, width = 9)
+ggsave("output/figure3supp2a-ecdf_sigscores_clusters.pdf", p2, height = 4, width = 9)
 
 ```
 
-## Figure 3 - figure supplement 3C
+## Appendix 2 - figure supplement 1H
 
 ```{r}
 df.ecdf <- sel.scores %>% 
   reshape2::melt()
 
 df.ecdf$variable <- factor(df.ecdf$variable, 
-                           levels = c("rESR_RP","rdn", "glycolysis", "hsp2",  "hyperosm_stress",
-                                      "carb_reserve_metab",  "S_G2", "oxidative2",
-                                      "m_gresham",
-                                      "efflux_pumps","AA_biosynt_GCN4"),
-                           labels = c("RP","rRNA", "glycolysis", "heat-shockS",
-                                       "hyperosmoticS",
-                                      "carb. reserve metab.", "S phase", "oxidativeS",
-                                      "M phase",
-                                      "efflux pumps", "AA biosynth. GCN4"),
+                           levels = c("hyperosm_stress"),
+                           labels = c("hyperosmoticS"),
                            ordered = TRUE)
 
 
 df.ecdf$drug_day <- factor(df.ecdf$drug_day, 
                              levels = rev(c("UT_0", "RAPA_2", "CSP_2", "FCZ_2", "FCZ_3")), ordered = TRUE)
 
-p3 <- ggplot(subset(df.ecdf, !leiden_scVI_2=="others" & !variable %in% c("AA biosynth. GCN4", "M phase", "carb. reserve metab.",
-                                                                         "S phase", "efflux pumps")),
+p3 <- ggplot(subset(df.ecdf, !leiden_scVI_2=="others"),
        aes(value, color = drug_day)) +
   stat_ecdf() +
   scale_color_manual(values=c(lacroix_palette("Coconut", type = "continuous", n=21)[c(1,4)], 
@@ -454,13 +446,13 @@ p3 <- ggplot(subset(df.ecdf, !leiden_scVI_2=="others" & !variable %in% c("AA bio
         panel.grid.minor = element_line(size = rel(0.5)), 
         legend.key = element_rect(fill = "white", colour = NA), complete = TRUE)
 
-ggsave("output/figure3supp3c-ecdf_sigscores_drug-day.pdf", p3, height = 4)
+ggsave("output/appendix2fig1h-ecdf_sigscores_drug-day.pdf", p3, height = 4)
 
 ```
 
 
 
-## Figure 3 - figure supplement 4A
+## Appendix 2 - figure 1I
 
 ```{r}
 magic.hyperosm <- t(counts[, colnames(counts) %in% names(finalall@sigData$hyperosm_stress@sigDict), drop = FALSE])
@@ -491,11 +483,11 @@ pheatmap(bs$dat,
          annotation_colors = list(leiden_scVI_2=col_clusters, drug_day = col_drug_day), 
              color = viridisLite::viridis(n=100, option="G", direction = -1), 
              cluster_rows = FALSE, cluster_cols = FALSE, main = "Hyperosmotic stress",
-             show_colnames = FALSE, scale = "row", filename = "output/figure3supp4a-hyperosm_gene_heatmap_drug_day.pdf", height = 3)
+             show_colnames = FALSE, scale = "row", filename = "output/appendix2fig1i-hyperosm_gene_heatmap_drug_day.pdf", height = 3)
 ```
 
 
-## Figure 3 - figure supplement 4B
+## Appendix2 - figure 1J
 ```{r}
 p22 <- ggplot(subset(df.ecdf, !leiden_scVI_2=="others" & variable == "RP"), 
        aes(value, color = drug_day)) +
@@ -513,7 +505,7 @@ p22 <- ggplot(subset(df.ecdf, !leiden_scVI_2=="others" & variable == "RP"),
         legend.key = element_rect(fill = "white", colour = NA), complete = TRUE)
 
 p22
-ggsave("output/figure3supp4b-ecdf_rp_drug_day.pdf", p22, height = 3.5, width = 8)
+ggsave("output/appendix2fig1j-ecdf_rp_drug_day.pdf", p22, height = 3.5, width = 8)
 
 ks.test(full.df[full.df$drug_day=="UT_0", "rESR_RP"],
         full.df[full.df$drug_day=="RAPA_2", "rESR_RP"])
