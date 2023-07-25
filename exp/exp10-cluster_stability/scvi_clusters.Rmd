@@ -20,15 +20,12 @@ library(forcats)
 iter.files <- list.files("/home/data/release/sc-candida_paper/exp/exp03-scvi", pattern = "_iteration.csv", full.names = TRUE)
 
 
-labels.files <- c("/home/data/release/sc-candida_paper/data/data03-scvi/csp_2-adjLogcounts_labels.csv",
-                  "/home/data/release/sc-candida_paper/data/data03-scvi/fcz_2_3-adjLogcounts_labels.csv",
-                  "/home/data/release/sc-candida_paper/data/data03-scvi/fcz_3_6final-adjLogcounts_labels.csv",
-                  "/home/data/release/sc-candida_paper/data/data03-scvi/utfczcsprapa-adjLogcounts_labels.csv",
-                  "/home/data/release/sc-candida_paper/data/data03-scvi/rapa_2-adjLogcounts_labels.csv",
-                  "/home/data/release/sc-candida_paper/data/data03-scvi/ut_0-adjLogcounts_labels.csv")
+labels.files <- c("/home/data/release/sc-candida_paper_revision/data/data03-scvi/fcz_3_6final-adjLogcounts_labels.csv",
+                  "/home/data/release/sc-candida_paper_revision/data/data03-scvi/utfczcsprapa-adjLogcounts_labels.csv",
+                  "/home/data/release/sc-candida_paper_revision/data/data03-scvi/ut_0-adjLogcounts_labels.csv")
 
 
-nms <- c("csp_2", "fcz_2_3", "fcz_3_6final", "utfczcsprapa", "rapa_2", "ut_0")
+nms <- c("fcz_3_6final", "utfczcsprapa", "ut_0")
 
 
 
@@ -87,8 +84,6 @@ iter.df <- lapply(1:length(iter.files), function(x){
   
   ext.labels <- left_join(orig.labels, results.df[, colnames(results.df) %in% c("cellid", "has_value_gt_50", "iter.cluster", "robust.iter.cluster")])
   
-    write.csv(ext.labels, paste0("/home/data/release/sc-candida_paper_revision/data/data03-scvi/", nms[x],"-adjLogcounts_labels_2.csv"), quote = FALSE)
-  
 
   test.df <- results.df %>%
     tidyr::pivot_longer(cols = -c(cellid, has_value_gt_50, leiden_scVI, iter.cluster, robust.iter.cluster, iter.cluster.count), names_to = "cluster", values_to = "count")
@@ -102,51 +97,8 @@ iter.df <- lapply(1:length(iter.files), function(x){
 
 names(iter.df) <- nms
 
-# subset(iter.df[[1]],  leiden_scVI %in% c(0, 1, 2, 3) & cluster %in% c("cluster0", "cluster2", "cluster3"))
-# factor(cluster, levels = c("cluster0", "cluster2", "cluster3"),labels = c("A","B","C"), ordered = TRUE), fill = count)
-# factor(leiden_scVI, levels = c(0,1,2,3), labels = c(1,2,3,4), ordered = TRUE)
-p00 <- ggplot(iter.df[[1]], 
-             aes(x = fct_reorder(cellid, count),
-                 y = factor(cluster, levels = c("cluster0", "cluster2"),
-                            labels = c("A", "B"), ordered = TRUE), fill = count)) +
-  geom_tile() +
-  scale_fill_gradient2(low = "white", mid = "white", high = "blue", midpoint = 30) +
-  facet_grid(~ factor(leiden_scVI, levels = 0:2, labels = 0:2, ordered = TRUE), scales = "free", space = "free") +
-  labs(title = "Cluster Robustness CSP day 2",
-       x = "Cell ID",
-       y = "Cluster",
-       fill = "Count") +
-  theme(plot.title = element_text(hjust = 0.5)) +
-  theme(strip.background = element_blank(),
-        panel.border = element_rect(colour = "lightgrey", fill = NA),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank(),
-        strip.text = element_text(face = "bold"),
-        legend.position = "bottom",
-        legend.direction = "horizontal")
 
-
-p0 <- ggplot(subset(iter.df[[2]], leiden_scVI %in% 0:9 & cluster %in% paste0("cluster", 0:9)), 
-             aes(x = fct_reorder(cellid, count),
-                 y = factor(cluster, levels = paste0("cluster", 0:9),
-                            labels = c("A", "B", "C", "D", "E", "F", "G", "H", "I", "J"), ordered = TRUE), fill = count)) +
-  geom_tile() +
-  scale_fill_gradient2(low = "white", mid = "white", high = "blue", midpoint = 30) +
-  facet_grid(~ factor(leiden_scVI, levels = 0:9, labels = 0:9, ordered = TRUE), scales = "free", space = "free") +
-  labs(title = "Cluster Robustness FCZ day 2 and 3",
-       x = "Cell ID",
-       y = "Cluster",
-       fill = "Count") +
-  theme(plot.title = element_text(hjust = 0.5)) +
-  theme(strip.background = element_blank(),
-        panel.border = element_rect(colour = "lightgrey", fill = NA),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank(),
-        strip.text = element_text(face = "bold"),
-        legend.position = "bottom",
-        legend.direction = "horizontal")
-
-p1 <- ggplot(subset(iter.df[[3]],  leiden_scVI %in% c(0, 1, 2, 3) & cluster %in% c("cluster0", "cluster2", "cluster3")), 
+p1 <- ggplot(subset(iter.df[[1]],  leiden_scVI %in% c(0, 1, 2, 3) & cluster %in% c("cluster0", "cluster2", "cluster3")), 
              aes(x = fct_reorder(cellid, count), 
                  y =  factor(cluster, levels = c("cluster0", "cluster2", "cluster3"),labels = c("A","B","C"), ordered = TRUE), fill = count)) +
 geom_tile() +
@@ -166,7 +118,7 @@ geom_tile() +
         legend.direction = "horizontal")
 
     
-p2 <- ggplot(subset(iter.df[[4]], leiden_scVI %in% c(0, 1, 2, 3, 4) 
+p2 <- ggplot(subset(iter.df[[2]], leiden_scVI %in% c(0, 1, 2, 3, 4) 
                     & cluster %in% c("cluster0", "cluster1", "cluster2", "cluster3")), 
              aes(x = fct_reorder(cellid, count),
                  y = factor(cluster, levels = c("cluster0", "cluster2", "cluster1", "cluster3"),
@@ -188,28 +140,7 @@ p2 <- ggplot(subset(iter.df[[4]], leiden_scVI %in% c(0, 1, 2, 3, 4)
         legend.direction = "horizontal")
 
 
-p31 <- ggplot(subset(iter.df[[5]], leiden_scVI %in% c(0, 1, 2) 
-                    & cluster %in% c("cluster0", "cluster1", "cluster2")),
-             aes(x = fct_reorder(cellid, count), y = factor(cluster, levels = c("cluster0", "cluster1", "cluster2"),labels = c("A","B","C"), ordered = TRUE), fill = count)) +
-geom_tile() +
-   scale_fill_gradient2(low = "white", mid = "white", high = "blue", midpoint = 30) +
-  facet_grid(~ factor(leiden_scVI, levels = c(2,0,1), labels = c(1,2,3), ordered = TRUE), 
-             scales = "free", space = "free") +
-
-  labs(title = "Cluster Robustness RAPA",
-       x = "Cell ID",
-       y = "Cluster",
-       fill = "Count") +
-  theme(plot.title = element_text(hjust = 0.5)) +
-  theme(strip.background = element_blank(),
-        panel.border = element_rect(colour = "lightgrey", fill = NA),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank(),
-        strip.text = element_text(face = "bold"),
-        legend.position = "bottom",
-        legend.direction = "horizontal")
-
-p32 <- ggplot(subset(iter.df[[6]], leiden_scVI %in% c(0, 1, 2) 
+p32 <- ggplot(subset(iter.df[[3]], leiden_scVI %in% c(0, 1, 2) 
                     & cluster %in% c("cluster0", "cluster1", "cluster2")),
              aes(x = fct_reorder(cellid, count), y = factor(cluster, levels = c("cluster0", "cluster1", "cluster2"),labels = c("A","B","C"), ordered = TRUE), fill = count)) +
 geom_tile() +
@@ -230,31 +161,9 @@ geom_tile() +
         legend.position = "bottom",
         legend.direction = "horizontal")
 
-p33 <- ggplot(subset(iter.df[[6]], leiden_scVI %in% c(0, 1, 2)),
-             aes(x = fct_reorder(cellid, count), y = cluster, fill = count)) +
-geom_tile() +
-   scale_fill_gradient2(low = "white", mid = "white", high = "blue", midpoint = 30) +
-  facet_grid(~ factor(leiden_scVI, levels = c(2,0,1), labels = c(1,2,3), ordered = TRUE), 
-             scales = "free", space = "free") +
-
-  labs(title = "Cluster Robustness UT",
-       x = "Cell ID",
-       y = "Cluster",
-       fill = "Count") +
-  theme(plot.title = element_text(hjust = 0.5)) +
-  theme(strip.background = element_blank(),
-        panel.border = element_rect(colour = "lightgrey", fill = NA),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank(),
-        strip.text = element_text(face = "bold"),
-        legend.position = "bottom",
-        legend.direction = "horizontal")
-
+getwd()
 
 pdf("output/cluster_robustness.pdf")
-print(p00)
-print(p0)
-print(p31)
 print(p32)
 print(p2)
 print(p1)
@@ -262,12 +171,3 @@ dev.off()
 
 
 ```
-```{r}
-iter.df[[6]] %>%                               # Summary by group using dplyr
-  group_by(leiden_scVI) %>% 
-  summarize(gt_50 = sum(has_value_gt_50),
-            mean_iter = mean(iter.cluster.count),
-            median_iter = median(iter.cluster.count),
-            max_iter = max(iter.cluster.count))
-```
-
