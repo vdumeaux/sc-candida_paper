@@ -216,7 +216,7 @@ dev.off()
 cols <- as.character(lacroix_palette("PassionFruit", type = "continuous", n=6))
 names(cols) <- levels(all.metadata$leiden_scVI_2)
 
-pdf("output/siggenes_heatmap_ut.pdf")
+pdf("output/siggenes_heatmap.pdf")
 plot.cc <- lapply(sel.sig, function(x){
       bs <- list()
       
