@@ -1,0 +1,288 @@
+---
+title: "figure5"
+author: "Vanessa Dumeaux"
+date: "12/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(VISION)
+library(here)
+library(ggplot2)
+library("LaCroixColoR")
+library(reshape2)
+library(viridis)
+library(viridisLite)
+library(RColorBrewer)
+library(here)
+library(pheatmap)
+library(dplyr)
+library(readxl)
+library(slingshot)
+
+
+
+source(here("src", "bresat.R"))
+```
+
+## Import scvi, magic counts and VISION results
+
+
+```{r}
+vis.pth <- here("data", "data04-VISION")
+scvi.pth <- here("data", "data03-scvi")
+    
+finalall <- readRDS(file.path(vis.pth, "fcz_3_6final-adjLogcounts_vis.rds"))
+
+counts <- read.csv(file.path(scvi.pth, "fcz_3_6final-adjLogcounts_magic.csv"))
+counts <- subset(counts, select = -c(X))
+dim(counts)
+
+all.latent <- finalall@LatentSpace
+colnames(all.latent) <- c("UMAP1", "UMAP2")
+
+all.metadata <- finalall@metaData
+table(all.metadata$leiden_scVI_2)
+table(all.metadata$leiden_scVI_2, all.metadata$drug_day)
+all.metadata$leiden_scVI_2 <- recode_factor(all.metadata$leiden_scVI_2, 
+                                            "0" = "cluster1", "1" = "cluster2", "2" = "cluster3",
+                                            "3" = "cluster4", "others" = "others")
+
+
+sig.scores <- finalall@SigScores
+
+
+```
+
+
+
+```{r}
+
+full.df <- cbind(all.latent, all.metadata, sig.scores)
+
+
+```
+
+## Figure 5A
+```{r}
+library(MetBrewer)
+p1 <- ggplot(subset(full.df, !leiden_scVI_2 == "others"), aes(x=UMAP1, y=UMAP2, col = leiden_scVI_2)) +
+  geom_point(size = 0.4) + 
+  scale_color_manual(values=met.brewer("Cross", 6)) +
+  theme_void()
+  
+p1
+
+ggsave("output/figure5a-all_umap_leiden2.pdf", p1, width = 5, height = 4)
+```
+```{r}
+#Plot 1
+
+sel <- which(all.metadata$leiden_scVI_2 %in% c("cluster1", "cluster2", "cluster3", "cluster4"))
+
+
+
+colour_map = brewer.pal(9,'Set1')
+
+par(xpd=TRUE)
+par(mar=c(4.5,5.5,2,7))
+plot(all.latent[sel, 1], all.latent[sel,2], col=colour_map[all.metadata$leiden_scVI_2[sel]], bty='L', xlab='UMAP1', ylab='UMAP2')
+legend(x=15, y=7, legend=unique(all.metadata$leiden_scVI_2[sel]), fill=colour_map[as.integer(unique(all.metadata$leiden_scVI_2[sel]))])
+
+
+adata_start <- slingshot(all.latent[sel,], clusterLabels = all.metadata$leiden_scVI_2[sel], start.clus="cluster2")
+
+pdf("output/figure5a-slingshot_scvi.pdf", useDingbats=FALSE)
+par(xpd=TRUE)
+plot(all.latent[sel, 1], all.latent[sel,2], col=colour_map[as.factor(all.metadata$leiden_scVI_2[sel])], pch=16, asp = 1, bty='L', xlab='UMAP1', ylab='UMAP2')
+lines(SlingshotDataSet(adata_start), lwd=2, type='lineages')
+legend(x=10, y=20, legend=unique(all.metadata$leiden_scVI_2[sel]), fill=brewer.pal(9,'Set1')[as.integer(unique(all.metadata$leiden_scVI[sel]))])
+dev.off()
+
+
+```
+
+## Figure 5D
+
+```{r}
+p2 <- ggplot(subset(full.df, !leiden_scVI_2 == "others"), aes(x=UMAP1, y=UMAP2, col = rESR_RP)) +
+  geom_point(size = 0.4) + 
+  scale_color_viridis_c() +
+  theme_void()
+
+ggsave("output/figure5d-all_umap_RP.pdf", p2, width = 4.5, height = 4)
+```
+
+
+## Figure 5E
+
+```{r}
+
+p3 <- ggplot(subset(full.df, !leiden_scVI_2 == "others"), aes(x=UMAP1, y=UMAP2, col = hsp2)) +
+  geom_point(size = 0.4) + 
+  scale_color_viridis_c() +
+  theme_void()
+
+ggsave("output/figure5e-all_umap_hsp2.pdf", p3, width = 4.5, height = 4)
+```
+
+
+
+
+## Identify most variable VISION signatures and explore gene expression
+
+### Compute median signature score for each cluster and identify the most variable signatures across clusters
+
+
+```{r}
+library(viridis)
+library(viridisLite)
+library(RColorBrewer)
+
+library(dplyr)
+
+library(dplyr)
+
+clusters <- all.metadata
+
+sigtb <- data.frame(sig.scores)
+sigtb$leiden_scvi <- clusters$leiden_scVI_2
+
+sig.group <- subset(sigtb, !leiden_scvi=="others") %>%
+  group_by(leiden_scvi) %>%
+  summarise_at(.vars = names(.)[1:43],.funs = c(median="median"))
+
+df.median.sig <- t(sig.group[, -1])
+colnames(df.median.sig) <- sig.group$leiden_scvi
+
+
+bs <- sig.ranksum(df.median.sig, ns=1:nrow(df.median.sig), full.return = TRUE)
+
+bs.var <- apply(bs$dat, 1, var)
+
+sel <- rownames(bs$dat)[bs.var > 0.05]
+sel
+```
+### Check consistency of expression for most variable genes in each signature across UT cells
+
+#### Plot correlation matrix
+
+```{r}
+
+library(MetBrewer)
+
+breaksList = seq(-1, 1, by = 0.1)
+sel.sig <- gsub("_median", "", sel)
+
+pdf("output/siggenes_cormatrix_fcz3-6.pdf")
+
+plot.cc <- lapply(sel.sig, function(x){
+  
+  corm <- NULL
+  
+  magic.cellcycle <- t(counts[, colnames(counts) %in% names(finalall@sigData[[x]]@sigDict), drop = FALSE])
+  
+  if(nrow(magic.cellcycle) > 0){
+    
+    colnames(magic.cellcycle) <- paste0("cell", 1:5865)
+    sel.var <- which(apply(magic.cellcycle,1, var)>0.03)
+    
+    magic.cellcycle <- magic.cellcycle[sel.var, , drop = FALSE]
+    
+    if(nrow(magic.cellcycle) > 1){
+      
+      corm <- cor(t(magic.cellcycle))
+      
+      pheatmap(corm,
+             color = rev(met.brewer("Cassatt1",n=21,type="continuous")), 
+             cluster_rows = TRUE, cluster_cols = TRUE, main = x, breaks = breaksList,
+             scale = "none")
+    }
+    }
+})
+dev.off()
+
+```
+### Check expression of the most variable genes in each signature
+```{r}
+cols <- as.character(lacroix_palette("PassionFruit", type = "continuous", n=6))
+names(cols) <- levels(all.metadata$leiden_scVI_2)
+
+pdf("output/siggenes_heatmap_fcz3-6.pdf")
+plot.cc <- lapply(sel.sig, function(x){
+      bs <- list()
+      
+      magic.cellcycle <- t(counts[, colnames(counts) %in% names(finalall@sigData[[x]]@sigDict), drop = FALSE])
+      
+      if(nrow(magic.cellcycle) > 0){
+        colnames(magic.cellcycle) <- paste0("cell", 1:5865)
+        sel.var <- which(apply(magic.cellcycle, 1, var)>0.03)
+        
+        magic.cellcycle <- magic.cellcycle[sel.var, , drop = FALSE]
+        rownames(all.metadata) <- colnames(magic.cellcycle)
+    
+        if(nrow(magic.cellcycle) > 1){
+          bs <- sig.ranksum(magic.cellcycle, ns=1:nrow(magic.cellcycle), full.return = TRUE)
+          
+          pheatmap(bs$dat, 
+             annotation_col = all.metadata[bs$pat.order, colnames(all.metadata)=="leiden_scVI_2",  drop = FALSE], 
+             annotation_colors = list(leiden_scVI_2=cols), 
+             color = viridisLite::viridis(n=100, option="G", direction = -1), 
+             cluster_rows = FALSE, cluster_cols = FALSE, main = x,
+             show_colnames = FALSE, scale = "row")
+          }
+      }
+      
+      return(bs)
+      })
+dev.off()
+
+names(plot.cc) <- sel.sig
+
+names(plot.cc)[unlist(lapply(plot.cc, function(x){length(x)==0}))] # check signatures with <= 1 most variable genes
+```
+# Select final signatures and make figures ----------------
+
+We selected the most variable signatures across clusters which also avoid redundancy and exhibit robustness in the the directionnality of expression for the most variable genes in signature.
+```{r}
+
+sel.paper.median <- c("hsp2_median", "alcohol_dehydrogenase_median", "rESR_RP_median")
+
+```
+
+
+## Figure 5G
+
+```{r}
+
+order_clusters <- c("cluster2","cluster1","cluster3", "cluster4")
+
+df.plot.sig.heatmap <- df.median.sig[match(sel.paper.median, rownames(df.median.sig)), match(order_clusters, colnames(df.median.sig))]
+
+      
+pheatmap::pheatmap(df.plot.sig.heatmap,
+             color = viridisLite::viridis(n=100, option="G", direction = -1), 
+             cluster_rows = FALSE, cluster_cols = FALSE, 
+             labels_row = c("heat-shock stress", 
+                            "alcohol dehydrogenase",
+                           "RP"),
+             scale = "row", filename = "output/figure5g-heatmap_visionSig_sel_bresat.pdf", height = 3, width = 4)
+
+```
+
+## Figure 5H
+
+```{r}
+p4 <- ggplot(subset(full.df, !leiden_scVI_2 == "others"), aes(x=UMAP1, y=UMAP2, col = alcohol_dehydrogenase)) +
+  geom_point(size = 0.4) + 
+  scale_color_viridis_c() +
+  theme_void()
+
+ggsave("output/figure5h-all_umap_alcohol-dehydrogenase.pdf", p4, width = 5.5, height = 4)
+```
+
