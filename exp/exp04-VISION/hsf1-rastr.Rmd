@@ -52,13 +52,13 @@ vis.obj <- function(x){
 
     
     vis <- Vision(data = t(counts), 
-              signatures = file.path(vis.pth, "table1-hsf1_rastr_geneSig.gmt"),
+              signatures = file.path(vis.pth, "table1a-hsf1_rastr_geneSig.gmt"),
               latentSpace= latent_scVI,meta=data.frame(clusters), 
               min_signature_genes = 2)
     
     vis <- analyze(vis)
     
-    saveRDS(vis, file.path(vis.pth, paste0(x, "-adjLogcounts_vis.rds")))
+    saveRDS(vis, file.path(vis.pth, paste0(x, "-adjLogcounts_vis_hsf1-rastr.rds")))
     
     return(list(vis=vis))
     
