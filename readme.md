@@ -1,8 +1,13 @@
 # Sc-candida paper
 
+This is the code and data associated with our study published in eLife in 2023.
+
+Please cite: 
+Dumeaux V, Massahi S, Bettauer V, Khurdia S, Costa ACBP, Omran RP, Simpson S, Xie JL, Whiteway M, Berman J, Hallett MT. Candida albicans exhibits adaptive cytoprotective responses to anti-fungal compounds. Elife 2023;12:e81406 [https://dx.doi.org/10.7554/eLife.81406](https://dx.doi.org/10.7554/eLife.81406)
+
 We use OSF as a [special remote](https://git-annex.branchable.com/special_remotes/) to store data in the annex of this repository : we published the repository to GitHub and have the data published to the [OSF](https://osf.io/5tpk3/) (via a publication dependency). 
 
-## To clone repository 
+## To clone repository and get the data
 
 You need to install datalad 
 
